@@ -1,0 +1,6 @@
+{
+  "name": "Student Attendance & Notification System",
+  "description": "A web-based application to manage student attendance records and automatically send email notifications for absences and tardiness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

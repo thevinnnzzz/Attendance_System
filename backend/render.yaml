@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: attendance-system-api
+    runtime: node
+    repo: https://github.com/YOUR_USERNAME/YOUR_REPO
+    branch: main
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: GMAIL_SMTP_USER
+        sync: false      # set in Render dashboard
+      - key: GMAIL_SMTP_PASS
+        sync: false      # set in Render dashboard
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false      # set in Render dashboard – paste the whole JSON
+      - key: PORT
+        value: 3000

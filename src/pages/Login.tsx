@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '../firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { supabase } from '../firebase';
 import { toast } from 'sonner';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -26,14 +25,11 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       toast.success('Logged in successfully');
     } catch (err: any) {
-      if (
-        err.code === 'auth/invalid-credential' ||
-        err.code === 'auth/user-not-found' ||
-        err.code === 'auth/wrong-password'
-      ) {
+      if (err.message?.includes('Invalid login credentials') || err.message?.includes('invalid_credentials')) {
         toast.error('Invalid email or password');
       } else {
         toast.error(err.message || 'Failed to login');
@@ -372,10 +368,8 @@ export default function Login() {
         <div className={`login-panel${mounted ? ' mounted' : ''}`}>
           <div className="login-card">
 
-            {/* Header */}
             <div className="crest">
               <div className="crest-icon">
-                {/* Mortarboard / school icon */}
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 3L1 9l11 6 9-4.91V17M5 13.07V19l7 3 7-3v-5.93"/>
                 </svg>
@@ -392,7 +386,6 @@ export default function Login() {
 
             <form onSubmit={handleLogin}>
               <div className="field-group">
-                {/* Email */}
                 <div className="field">
                   <label className="field-label" htmlFor="email">Email Address</label>
                   <div className="field-wrap">
@@ -415,7 +408,6 @@ export default function Login() {
                   </div>
                 </div>
 
-                {/* Password */}
                 <div className="field">
                   <label className="field-label" htmlFor="password">Password</label>
                   <div className="field-wrap">

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
+import { supabase } from '../firebase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -20,16 +19,15 @@ export default function Students() {
   const [formData, setFormData] = useState({ student_number: '', fullname: '', section: '', student_email: '', parent_email: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter and Sort states
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSection, setFilterSection] = useState('All');
   const [sortBy, setSortBy] = useState('name-asc');
 
   const fetchStudents = async () => {
     try {
-      const snap = await getDocs(collection(db, 'students'));
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setStudents(list);
+      const { data, error } = await supabase.from('students').select('*');
+      if (error) throw error;
+      setStudents(data || []);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load students');
@@ -45,7 +43,8 @@ export default function Students() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'students'), formData);
+      const { error } = await supabase.from('students').insert([formData]);
+      if (error) throw error;
       toast.success('Student added successfully');
       setOpen(false);
       fetchStudents();
@@ -58,7 +57,8 @@ export default function Students() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this student?')) return;
     try {
-      await deleteDoc(doc(db, 'students', id));
+      const { error } = await supabase.from('students').delete().eq('id', id);
+      if (error) throw error;
       toast.success('Deleted successfully');
       fetchStudents();
     } catch (err: any) {
@@ -75,26 +75,23 @@ export default function Students() {
       skipEmptyLines: true,
       complete: async (results) => {
         try {
-          const batch = writeBatch(db);
-          let count = 0;
+          const validRows: any[] = [];
           results.data.forEach((row: any) => {
-            // Adjust mapping as needed. We check for core fields.
             if (row.student_number && row.fullname && row.section && row.parent_email) {
-              const docRef = doc(collection(db, 'students'));
-              batch.set(docRef, {
+              validRows.push({
                 student_number: row.student_number,
                 fullname: row.fullname,
                 section: row.section,
                 student_email: row.student_email || '',
                 parent_email: row.parent_email
               });
-              count++;
             }
           });
 
-          if (count > 0) {
-            await batch.commit();
-            toast.success(`Successfully uploaded ${count} students`);
+          if (validRows.length > 0) {
+            const { error } = await supabase.from('students').insert(validRows);
+            if (error) throw error;
+            toast.success(`Successfully uploaded ${validRows.length} students`);
             fetchStudents();
           } else {
             toast.error('No valid data found. Ensure CSV headers are: student_number, fullname, section, student_email, parent_email');
@@ -198,8 +195,8 @@ export default function Students() {
       <div className="flex flex-wrap items-center gap-4 bg-card p-4 rounded-lg border shadow-sm">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search students..." 
+          <Input
+            placeholder="Search students..."
             className="pl-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

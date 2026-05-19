@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { supabase } from '../firebase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -19,7 +18,6 @@ export default function Users() {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({ fullname: '', email: '', password: '', role: 'teacher' });
 
-  // Filter and Sort states
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('All');
   const [sortBy, setSortBy] = useState('name-asc');
@@ -30,8 +28,9 @@ export default function Users() {
 
   const fetchUsers = async () => {
     try {
-      const snap = await getDocs(collection(db, 'users'));
-      setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const { data, error } = await supabase.from('users').select('*');
+      if (error) throw error;
+      setUsers(data || []);
     } catch (err) {
       toast.error('Failed to load users');
     } finally {
@@ -53,7 +52,7 @@ export default function Users() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
+
       toast.success('User added successfully');
       setOpen(false);
       fetchUsers();
@@ -71,9 +70,9 @@ export default function Users() {
           u.fullname?.toLowerCase().includes(query) ||
           u.email?.toLowerCase().includes(query)
         );
-        
+
         const matchesRole = filterRole === 'All' || (u.role || '').toLowerCase() === filterRole.toLowerCase();
-        
+
         return matchesSearch && matchesRole;
       })
       .sort((a, b) => {
@@ -135,8 +134,8 @@ export default function Users() {
       <div className="flex flex-wrap items-center gap-4 bg-card p-4 rounded-lg border shadow-sm">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search users..." 
+          <Input
+            placeholder="Search users..."
             className="pl-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -191,8 +190,8 @@ export default function Users() {
                   <TableCell>{u.email}</TableCell>
                   <TableCell>
                     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${
-                      u.role === 'admin' 
-                        ? 'bg-purple-500/10 text-purple-600 dark:text-purple-500 ring-purple-500/20' 
+                      u.role === 'admin'
+                        ? 'bg-purple-500/10 text-purple-600 dark:text-purple-500 ring-purple-500/20'
                         : 'bg-green-500/10 text-green-600 dark:text-green-500 ring-green-500/20'
                     }`}>
                       {u.role}

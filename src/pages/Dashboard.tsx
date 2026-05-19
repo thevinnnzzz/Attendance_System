@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { supabase } from '../firebase';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { ArrowUpRight, ArrowDownRight, RefreshCcw } from 'lucide-react';
@@ -25,34 +24,34 @@ export default function Dashboard() {
     const fetchDashboardStats = async () => {
       setLoading(true);
       try {
-        const studentSnap = await getDocs(collection(db, 'students'));
-        const totalStudents = studentSnap.size;
-        
-        // Setup cache for student names
+        const { data: students } = await supabase.from('students').select('*');
+        const totalStudents = students?.length || 0;
+
         const studentMap = new Map();
-        studentSnap.docs.forEach(doc => {
-          const data = doc.data();
-          studentMap.set(doc.id, {
-            name: data.fullname || data.student_number,
-            studentNumber: data.student_number || 'N/A'
+        students?.forEach(s => {
+          studentMap.set(s.id, {
+            name: s.fullname || s.student_number,
+            studentNumber: s.student_number || 'N/A'
           });
         });
 
-        const attSnap = await getDocs(collection(db, 'attendance'));
-        
+        const { data: attendance } = await supabase.from('attendance').select('*');
+
         let presentCount = 0;
         let absentCount = 0;
         let lateCount = 0;
 
-        // Group by date for trends
         const trends = new Map();
-        
-        // Sort docs manually just in case
-        const sortedDocs = attSnap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() } as any))
-          .sort((a, b) => b.created_at - a.created_at); // desc by created_at
 
-        sortedDocs.forEach(data => {
+        const sortedRecords = (attendance || [])
+          .map(r => ({ ...r }))
+          .sort((a: any, b: any) => {
+            const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return bTime - aTime;
+          });
+
+        sortedRecords.forEach((data: any) => {
           if (data.date === selectedDate) {
             if (data.status === 'Present') presentCount++;
             if (data.status === 'Absent') absentCount++;
@@ -68,25 +67,23 @@ export default function Dashboard() {
           }
         });
 
-        setStats({ 
-          totalStudents, 
-          presentCount, 
-          absentCount, 
+        setStats({
+          totalStudents,
+          presentCount,
+          absentCount,
           lateCount,
-          totalSessions: sortedDocs.length
+          totalSessions: sortedRecords.length
         });
 
-        // Prepare Trend Data (last 7 days sorted by date)
         const sortedDates = Array.from(trends.keys()).sort();
         const last7Dates = sortedDates.slice(-7);
         const mappedTrends = last7Dates.map(date => {
-           // just take MM-DD format
-           const shortDate = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-           return {
-             name: shortDate,
-             present: trends.get(date).present,
-             absent: trends.get(date).absent
-           }
+          const shortDate = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return {
+            name: shortDate,
+            present: trends.get(date).present,
+            absent: trends.get(date).absent
+          }
         });
         setTrendData(mappedTrends);
 
@@ -100,28 +97,27 @@ export default function Dashboard() {
     fetchDashboardStats();
   }, [selectedDate]);
 
-  const COLORS = ['#0ea5e9', '#6366f1', '#10b981', '#64748b']; // Electric Blue, Indigo, Mint Green, Slate Gray
+  const COLORS = ['#0ea5e9', '#6366f1', '#10b981', '#64748b'];
 
   const trafficData = [
     { name: 'Present', value: stats.presentCount },
     { name: 'Absent', value: stats.absentCount },
     { name: 'Late', value: stats.lateCount },
   ].filter(d => d.value > 0);
-  
+
   if (trafficData.length === 0) {
-     trafficData.push({ name: 'No Data Yet', value: 1 });
+    trafficData.push({ name: 'No Data Yet', value: 1 });
   }
 
   return (
     <div className="space-y-8 pb-8 max-w-7xl mx-auto">
-      {/* Top Bar Area */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-muted/30 p-2 rounded-xl border border-border">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Analytics Overview</h2>
           <p className="text-sm text-muted-foreground">Monitor your key performance indicators and growth metrics.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          <Input 
+          <Input
             type="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
@@ -129,8 +125,7 @@ export default function Dashboard() {
           />
         </div>
       </div>
-      
-      {/* KPI Cards */}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { title: 'Total Students', value: loading ? '...' : stats.totalStudents, change: 'Enrolled', isUp: true, color: '#0ea5e9' },
@@ -164,10 +159,8 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Visualizations Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Main Chart */}
+
         <Card className="lg:col-span-2 shadow-sm rounded-xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-border">
             <div>
@@ -188,25 +181,25 @@ export default function Dashboard() {
                       <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorAbsent" x1="0" y1="0" x2="0" y2="1">
-                       <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                       <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} 
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                     dy={10}
                   />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} 
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                     dx={-10}
                   />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--card)', color: 'var(--card-foreground)', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
                     itemStyle={{ color: 'var(--foreground)', fontWeight: '500' }}
                   />
@@ -218,7 +211,6 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Ring Chart */}
         <Card className="shadow-sm rounded-xl">
           <CardHeader className="pb-2 border-b border-border">
             <CardTitle className="text-base font-semibold text-foreground">Date Breakdown</CardTitle>
@@ -242,7 +234,7 @@ export default function Dashboard() {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip 
+                  <Tooltip
                     itemStyle={{ color: 'var(--foreground)', fontWeight: '500' }}
                     contentStyle={{ borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--card)', color: 'var(--card-foreground)', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />

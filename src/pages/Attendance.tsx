@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase';
-import { collection, getDocs, query, where, addDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
+import { supabase } from '../firebase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
@@ -19,7 +18,6 @@ export default function Attendance() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(true);
 
-  // Filter and Sort states
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [sortBy, setSortBy] = useState('name-asc');
@@ -31,15 +29,14 @@ export default function Attendance() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const studentSnap = await getDocs(collection(db, 'students'));
-      const studentList = studentSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const q = query(collection(db, 'attendance'), where('date', '==', date));
-      const attSnap = await getDocs(q);
-      const attList = attSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const { data: studentList, error: studentError } = await supabase.from('students').select('*');
+      if (studentError) throw studentError;
 
-      setStudents(studentList);
-      setAttendanceRecords(attList);
+      const { data: attList, error: attError } = await supabase.from('attendance').select('*').eq('date', date);
+      if (attError) throw attError;
+
+      setStudents(studentList || []);
+      setAttendanceRecords(attList || []);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load data');
@@ -86,27 +83,23 @@ export default function Attendance() {
     const selectedStudents = filteredAndSortedStudents.filter(s => selectedStudentIds.has(s.id));
     const toastId = toast.loading(`Marking ${selectedStudents.length} students as ${status}...`);
     try {
-      const batch = writeBatch(db);
       for (const student of selectedStudents) {
         const existing = attendanceRecords.find(r => r.student_id === student.id);
         if (existing) {
           if (existing.status !== status) {
-            batch.update(doc(db, 'attendance', existing.id), {
-              status,
-              recorded_by: user?.id,
-            });
+            const { error } = await supabase.from('attendance').update({ status, recorded_by: user?.id }).eq('id', existing.id);
+            if (error) throw error;
           }
         } else {
-          const newDocRef = doc(collection(db, 'attendance'));
-          batch.set(newDocRef, {
+          const { error } = await supabase.from('attendance').insert({
             student_id: student.id,
             status,
             date,
             recorded_by: user?.id,
-            created_at: Date.now()
           });
+          if (error) throw error;
         }
-        
+
         if ((status === 'Absent' || status === 'Late') && student.parent_email) {
           fetch(`${API_BASE_URL}/api/send-email`, {
             method: 'POST',
@@ -120,7 +113,6 @@ export default function Attendance() {
           }).catch(err => console.error("Failed to trigger email:", err));
         }
       }
-      await batch.commit();
       toast.success(`Successfully marked ${selectedStudents.length} students as ${status}`, { id: toastId });
       setSelectedStudentIds(new Set());
       fetchData();
@@ -140,25 +132,25 @@ export default function Attendance() {
   const markAttendance = async (student: any, status: string) => {
     try {
       const existing = attendanceRecords.find(r => r.student_id === student.id);
-      
+
       if (existing) {
         if (existing.status !== status) {
-          await updateDoc(doc(db, 'attendance', existing.id), {
+          const { error } = await supabase.from('attendance').update({
             status,
             recorded_by: user?.id,
-          });
+          }).eq('id', existing.id);
+          if (error) throw error;
         }
       } else {
-        await addDoc(collection(db, 'attendance'), {
+        const { error } = await supabase.from('attendance').insert({
           student_id: student.id,
           status,
           date,
           recorded_by: user?.id,
-          created_at: Date.now()
         });
+        if (error) throw error;
       }
 
-      // Send email if absent or late
       if ((status === 'Absent' || status === 'Late') && student.parent_email) {
         fetch(`${API_BASE_URL}/api/send-email`, {
           method: 'POST',
@@ -171,9 +163,9 @@ export default function Attendance() {
           })
         }).catch(err => console.error("Failed to trigger email:", err));
       }
-      
+
       toast.success(`Marked ${status}`);
-      fetchData(); // Refresh records
+      fetchData();
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -192,21 +184,21 @@ export default function Attendance() {
           student.student_number?.toLowerCase().includes(queryStr) ||
           student.section?.toLowerCase().includes(queryStr)
         );
-        
+
         const status = getStatus(student.id) || 'Unmarked';
         const matchesStatus = filterStatus === 'All' || status === filterStatus;
-        
+
         return matchesSearch && matchesStatus;
       })
       .sort((a, b) => {
         const valA = sortBy === 'name-asc' || sortBy === 'name-desc' ? a.fullname :
                      sortBy === 'id-asc' || sortBy === 'id-desc' ? a.student_number :
                      getStatus(a.id) || 'Unmarked';
-        
+
         const valB = sortBy === 'name-asc' || sortBy === 'name-desc' ? b.fullname :
                      sortBy === 'id-asc' || sortBy === 'id-desc' ? b.student_number :
                      getStatus(b.id) || 'Unmarked';
-                     
+
         if (sortBy.endsWith('-asc')) {
           return (valA || '').localeCompare(valB || '');
         } else {
@@ -220,10 +212,10 @@ export default function Attendance() {
       <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold tracking-tight text-foreground">Attendance Logging</h2>
         <div className="flex items-center gap-4">
-          <Input 
-            type="date" 
-            value={date} 
-            onChange={(e) => setDate(e.target.value)} 
+          <Input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
             className="w-auto"
           />
         </div>
@@ -232,8 +224,8 @@ export default function Attendance() {
       <div className="flex flex-wrap items-center gap-4 bg-card p-4 rounded-lg border shadow-sm">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by name, ID, or section..." 
+          <Input
+            placeholder="Search by name, ID, or section..."
             className="pl-9"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -303,7 +295,7 @@ export default function Attendance() {
             <Button variant="outline" onClick={() => setBulkConfirmModalState({ open: false, status: '' })}>Cancel</Button>
             <Button onClick={() => {
               if (bulkConfirmModalState.status) {
-                 executeBulkMark(bulkConfirmModalState.status);
+                executeBulkMark(bulkConfirmModalState.status);
               }
               setBulkConfirmModalState({ open: false, status: '' });
             }}>Confirm Bulk Update</Button>
@@ -333,8 +325,8 @@ export default function Attendance() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-12 text-center">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   className="w-4 h-4 rounded border-border text-blue-600 focus:ring-blue-500 cursor-pointer"
                   checked={filteredAndSortedStudents.length > 0 && selectedStudentIds.size === filteredAndSortedStudents.length}
                   onChange={toggleSelectAll}
@@ -358,8 +350,8 @@ export default function Attendance() {
                 return (
                   <TableRow key={student.id} className={selectedStudentIds.has(student.id) ? 'bg-blue-500/10' : ''}>
                     <TableCell className="text-center">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         className="w-4 h-4 rounded border-border text-blue-600 focus:ring-blue-500 cursor-pointer"
                         checked={selectedStudentIds.has(student.id)}
                         onChange={() => toggleSelectStudent(student.id)}

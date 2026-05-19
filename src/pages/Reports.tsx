@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { supabase } from '../firebase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
@@ -20,24 +19,22 @@ export default function Reports() {
   const fetchReports = async () => {
     setLoading(true);
     try {
-      // Create conditions
-      const conditionParts: any[] = [];
-      if (filters.startDate) conditionParts.push(where('date', '>=', filters.startDate));
-      if (filters.endDate) conditionParts.push(where('date', '<=', filters.endDate));
-      if (filters.status) conditionParts.push(where('status', '==', filters.status));
+      let query = supabase.from('attendance').select('*');
 
-      const attQuery = query(collection(db, 'attendance'), ...conditionParts);
-      const attSnap = await getDocs(attQuery);
-      let attList = attSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+      if (filters.startDate) query = query.gte('date', filters.startDate);
+      if (filters.endDate) query = query.lte('date', filters.endDate);
+      if (filters.status) query = query.eq('status', filters.status);
 
-      // we need student details
-      const studentSnap = await getDocs(collection(db, 'students'));
+      const { data: attList, error: attError } = await query;
+      if (attError) throw attError;
+
+      const { data: students, error: studentError } = await supabase.from('students').select('*');
+      if (studentError) throw studentError;
+
       const studentMap = new Map();
-      studentSnap.docs.forEach(doc => {
-        studentMap.set(doc.id, doc.data());
-      });
+      students?.forEach(s => studentMap.set(s.id, s));
 
-      let results = attList.map(item => {
+      let results = (attList || []).map(item => {
         const student = studentMap.get(item.student_id);
         return {
           ...item,
@@ -50,7 +47,6 @@ export default function Reports() {
         return true;
       });
 
-      // Sort desc by date
       results.sort((a: any, b: any) => b.date.localeCompare(a.date));
 
       setRecords(results);
@@ -67,16 +63,16 @@ export default function Reports() {
 
   const exportCSV = () => {
     if (records.length === 0) return toast.warning('No data to export');
-    
+
     const headers = ['Date', 'Student ID', 'Name', 'Section', 'Status'];
     const rows = records.map(r => [
-      r.date, 
-      r.student_number, 
-      `"${r.fullname}"`, 
-      r.section, 
+      r.date,
+      r.student_number,
+      `"${r.fullname}"`,
+      r.section,
       r.status
     ].join(','));
-    
+
     const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);

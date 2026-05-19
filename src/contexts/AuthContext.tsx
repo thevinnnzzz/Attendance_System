@@ -1,8 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { auth, db } from '../firebase';
-import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '../firebase';
 
 interface User {
   id: string;
@@ -24,27 +21,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser) {
+    const fetchUserData = async (session: any) => {
+      if (session?.user) {
         try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDoc = await getDoc(userDocRef);
-          
-          if (userDoc.exists()) {
-            const data = userDoc.data();
+          const { data, error } = await supabase
+            .from('users')
+            .select('fullname, role, email')
+            .eq('auth_id', session.user.id)
+            .single();
+
+          if (error && error.code !== 'PGRST116') {
+            console.error("Error fetching user data:", error);
+            setUser(null);
+          } else if (data) {
             setUser({
-              id: firebaseUser.uid,
-              email: firebaseUser.email || data.email,
+              id: session.user.id,
+              email: data.email || session.user.email || '',
               role: data.role || 'teacher',
-              name: data.fullname || firebaseUser.displayName || 'User'
+              name: data.fullname || session.user.user_metadata?.full_name || 'User'
             });
           } else {
-            // Document doesn't exist, this implies a new user without a role, or an issue.
             setUser({
-              id: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              role: 'teacher', // default
-              name: firebaseUser.displayName || 'User'
+              id: session.user.id,
+              email: session.user.email || '',
+              role: 'teacher',
+              name: session.user.user_metadata?.full_name || 'User'
             });
           }
         } catch (error) {
@@ -55,14 +56,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(null);
       }
       setLoading(false);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      fetchUserData(session);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      fetchUserData(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
     } catch (error) {
       console.error("Error signing out:", error);
     }

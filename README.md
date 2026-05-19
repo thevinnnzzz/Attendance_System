@@ -22,12 +22,13 @@ npm install
 ### 2. Supabase Setup
 
 1. Go to [Supabase](https://supabase.com/) and create a project.
-2. Go to the **SQL Editor** and run the contents of `supabase-schema.sql` to create the tables and RLS policies.
-3. Go to **Project Settings** > **API** and copy your project URL and keys.
-4. Go to **Authentication** > **Users** and create the initial admin user manually:
-   - Email: `admin@school.edu`
-   - Password: `admin12345`
-   - Then insert a record into the `users` table with the user's `auth_id`, email, fullname, and `role: 'admin'`.
+2. Go to the **SQL Editor** and run `schema/01-initial-setup.sql` to create the tables, indexes, and RLS policies.
+3. Go to **Authentication** > **Users** and create your admin user:
+   - Email: your email
+   - Password: your password
+   - Auto confirm user: ✅ (check this)
+4. Go back to the **SQL Editor** and run `schema/02-create-admin.sql` to grant admin role to that user.
+5. Go to **Project Settings** > **API** and copy your project URL and keys.
 
 ### 3. Create `.env`
 
@@ -86,7 +87,9 @@ This starts Netlify Dev, which serves the Vite frontend and Netlify Functions on
 │   ├── lib/                    # API config
 │   ├── firebase.ts             # Supabase client (named for compatibility)
 │   └── main.tsx
-├── supabase-schema.sql         # Database schema + RLS policies
+├── schema/
+│   ├── 01-initial-setup.sql    # Database tables, indexes, RLS policies
+│   └── 02-create-admin.sql     # Grant admin role to an auth user
 ├── netlify.toml                # Netlify configuration
 ├── .env                        # Environment variables (DO NOT SHARE)
 └── package.json
